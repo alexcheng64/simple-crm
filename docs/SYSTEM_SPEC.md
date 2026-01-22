@@ -22,7 +22,7 @@ A lightweight Customer Relationship Management system focused on contact managem
 ### 2.2 Contact Data Model
 
 **Required Fields:**
-- `id` - Unique identifier
+- `id` - Unique identifier (UUID)
 - `first_name` - Contact's first name
 - `last_name` - Contact's last name
 - `email` - Primary email address
@@ -52,11 +52,11 @@ A lightweight Customer Relationship Management system focused on contact managem
 
 ### 2.4 User Data Model
 
-- `id` - Unique identifier
+User data is managed by Supabase Auth (`auth.users` table):
+- `id` - Unique identifier (UUID)
 - `email` - Login email (unique)
-- `password_hash` - Securely hashed password
-- `name` - Display name
 - `created_at` - Account creation timestamp
+- Passwords are securely hashed and managed by Supabase
 
 ---
 
@@ -68,11 +68,12 @@ A lightweight Customer Relationship Management system focused on contact managem
 - Support up to 10,000 contacts per user
 
 ### 3.2 Security
-- Passwords hashed using bcrypt or Argon2
-- HTTPS for all communications
-- Session tokens with expiration
-- Input validation and sanitization
-- Protection against SQL injection and XSS
+- Passwords securely hashed and managed by Supabase Auth
+- HTTPS for all communications (enforced by Supabase)
+- Session management handled by Supabase Auth (JWT-based)
+- Row Level Security (RLS) for data isolation at database level
+- Input validation and sanitization on frontend
+- Protection against SQL injection via parameterized queries (PostgREST)
 
 ### 3.3 Usability
 - Responsive design (desktop and mobile)
@@ -84,64 +85,109 @@ A lightweight Customer Relationship Management system focused on contact managem
 ## 4. System Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│                 │     │                 │     │                 │
-│    Frontend     │────▶│   Backend API   │────▶│    Database     │
-│   (Web Client)  │     │    (REST/JSON)  │     │   (Relational)  │
-│                 │     │                 │     │                 │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
+┌─────────────────┐         ┌─────────────────────────────┐
+│                 │         │         Supabase            │
+│    Frontend     │  HTTPS  │  ┌─────────────────────┐   │
+│   (React SPA)   │────────▶│  │   Auth Service      │   │
+│                 │         │  ├─────────────────────┤   │
+│                 │         │  │   PostgREST API     │   │
+└─────────────────┘         │  ├─────────────────────┤   │
+                            │  │   PostgreSQL + RLS  │   │
+                            │  └─────────────────────┘   │
+                            └─────────────────────────────┘
 ```
 
-### 4.1 Recommended Database: SQLite or PostgreSQL
-- SQLite for single-user/small deployments
-- PostgreSQL for multi-user/production deployments
+### 4.1 Backend: Supabase (Backend-as-a-Service)
+
+Supabase provides all backend functionality:
+- **PostgreSQL Database** - Hosted, managed PostgreSQL
+- **Authentication** - Built-in auth with email/password, OAuth, magic links
+- **Auto-generated REST API** - PostgREST provides instant CRUD APIs
+- **Row Level Security (RLS)** - Database-level authorization
+- **Realtime** - Optional WebSocket subscriptions for live updates
+
+No custom backend server is required.
 
 ---
 
-## 5. API Endpoints
+## 5. Data Access (Supabase Client SDK)
 
 ### Authentication
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Create new user |
-| POST | `/api/auth/login` | Authenticate user |
-| POST | `/api/auth/logout` | End session |
-| POST | `/api/auth/reset-password` | Request password reset |
+
+```typescript
+// Register
+const { data, error } = await supabase.auth.signUp({
+  email: 'user@example.com',
+  password: 'password123'
+})
+
+// Login
+const { data, error } = await supabase.auth.signInWithPassword({
+  email: 'user@example.com',
+  password: 'password123'
+})
+
+// Logout
+const { error } = await supabase.auth.signOut()
+
+// Password Reset
+const { error } = await supabase.auth.resetPasswordForEmail('user@example.com')
+```
 
 ### Contacts
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/contacts` | List all contacts (paginated) |
-| GET | `/api/contacts/:id` | Get single contact |
-| POST | `/api/contacts` | Create new contact |
-| PUT | `/api/contacts/:id` | Update contact |
-| DELETE | `/api/contacts/:id` | Delete contact |
-| GET | `/api/contacts/search?q=` | Search contacts |
 
-### Query Parameters for List
-- `page` - Page number (default: 1)
-- `limit` - Items per page (default: 20, max: 100)
-- `sort` - Sort field (default: last_name)
-- `order` - Sort order: asc/desc (default: asc)
+```typescript
+// List contacts (paginated)
+const { data, error } = await supabase
+  .from('contacts')
+  .select('*')
+  .order('last_name', { ascending: true })
+  .range(0, 19)  // First 20 items
+
+// Get single contact
+const { data, error } = await supabase
+  .from('contacts')
+  .select('*')
+  .eq('id', contactId)
+  .single()
+
+// Create contact
+const { data, error } = await supabase
+  .from('contacts')
+  .insert({ first_name, last_name, email, ... })
+  .select()
+  .single()
+
+// Update contact
+const { data, error } = await supabase
+  .from('contacts')
+  .update({ first_name, last_name, ... })
+  .eq('id', contactId)
+  .select()
+  .single()
+
+// Delete contact
+const { error } = await supabase
+  .from('contacts')
+  .delete()
+  .eq('id', contactId)
+
+// Search contacts
+const { data, error } = await supabase
+  .from('contacts')
+  .select('*')
+  .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,email.ilike.%${query}%,company.ilike.%${query}%`)
+```
 
 ---
 
 ## 6. Database Schema
 
 ```sql
--- Users table
-CREATE TABLE users (
-    id          INTEGER PRIMARY KEY,
-    email       VARCHAR(255) UNIQUE NOT NULL,
-    password    VARCHAR(255) NOT NULL,
-    name        VARCHAR(100),
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Contacts table
+-- Contacts table (users managed by Supabase Auth)
 CREATE TABLE contacts (
-    id          INTEGER PRIMARY KEY,
-    user_id     INTEGER NOT NULL REFERENCES users(id),
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     first_name  VARCHAR(100) NOT NULL,
     last_name   VARCHAR(100) NOT NULL,
     email       VARCHAR(255) NOT NULL,
@@ -154,22 +200,22 @@ CREATE TABLE contacts (
     postal_code VARCHAR(20),
     country     VARCHAR(100),
     notes       TEXT,
-    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at  TIMESTAMPTZ DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Tags table
 CREATE TABLE tags (
-    id          INTEGER PRIMARY KEY,
-    user_id     INTEGER NOT NULL REFERENCES users(id),
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     name        VARCHAR(50) NOT NULL,
     UNIQUE(user_id, name)
 );
 
 -- Contact-Tags junction table
 CREATE TABLE contact_tags (
-    contact_id  INTEGER REFERENCES contacts(id) ON DELETE CASCADE,
-    tag_id      INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+    contact_id  UUID REFERENCES contacts(id) ON DELETE CASCADE,
+    tag_id      UUID REFERENCES tags(id) ON DELETE CASCADE,
     PRIMARY KEY (contact_id, tag_id)
 );
 
@@ -177,6 +223,90 @@ CREATE TABLE contact_tags (
 CREATE INDEX idx_contacts_user ON contacts(user_id);
 CREATE INDEX idx_contacts_email ON contacts(email);
 CREATE INDEX idx_contacts_name ON contacts(last_name, first_name);
+
+-- Row Level Security Policies
+ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contact_tags ENABLE ROW LEVEL SECURITY;
+
+-- Contacts: Users can only access their own contacts
+CREATE POLICY "Users can view own contacts"
+    ON contacts FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own contacts"
+    ON contacts FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own contacts"
+    ON contacts FOR UPDATE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own contacts"
+    ON contacts FOR DELETE
+    USING (auth.uid() = user_id);
+
+-- Tags: Users can only access their own tags
+CREATE POLICY "Users can view own tags"
+    ON tags FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can create own tags"
+    ON tags FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own tags"
+    ON tags FOR UPDATE
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own tags"
+    ON tags FOR DELETE
+    USING (auth.uid() = user_id);
+
+-- Contact Tags: Users can only access tags for their own contacts
+CREATE POLICY "Users can view own contact tags"
+    ON contact_tags FOR SELECT
+    USING (
+        EXISTS (
+            SELECT 1 FROM contacts
+            WHERE contacts.id = contact_tags.contact_id
+            AND contacts.user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can create own contact tags"
+    ON contact_tags FOR INSERT
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM contacts
+            WHERE contacts.id = contact_tags.contact_id
+            AND contacts.user_id = auth.uid()
+        )
+    );
+
+CREATE POLICY "Users can delete own contact tags"
+    ON contact_tags FOR DELETE
+    USING (
+        EXISTS (
+            SELECT 1 FROM contacts
+            WHERE contacts.id = contact_tags.contact_id
+            AND contacts.user_id = auth.uid()
+        )
+    );
+
+-- Function to auto-update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER contacts_updated_at
+    BEFORE UPDATE ON contacts
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at();
 ```
 
 ---

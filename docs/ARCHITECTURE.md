@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-This document describes the technical architecture for the Simple CRM system, a lightweight contact management application.
+This document describes the technical architecture for the Simple CRM system, a lightweight contact management application built with React and Supabase.
 
 ---
 
@@ -24,45 +24,31 @@ This document describes the technical architecture for the Simple CRM system, a 
                               │ HTTPS
                               ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         API Gateway Layer                            │
+│                         Supabase Platform                            │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │   ┌─────────────────────────────────────────────────────────────┐   │
-│   │                    REST API Server                           │   │
-│   │                    (Node.js/Express)                         │   │
-│   ├─────────────────────────────────────────────────────────────┤   │
-│   │  • Authentication Middleware (JWT)                          │   │
-│   │  • Request Validation                                        │   │
-│   │  • Rate Limiting                                             │   │
-│   │  • CORS Handling                                             │   │
+│   │                      Auth Service                            │   │
+│   │  • Email/Password authentication                            │   │
+│   │  • JWT session management                                   │   │
+│   │  • Password reset flows                                     │   │
 │   └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        Service Layer                                 │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│   ┌───────────────┐  ┌───────────────┐  ┌───────────────┐          │
-│   │    Auth       │  │   Contact     │  │     Tag       │          │
-│   │   Service     │  │   Service     │  │   Service     │          │
-│   └───────────────┘  └───────────────┘  └───────────────┘          │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         Data Layer                                   │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│   ┌───────────────┐  ┌───────────────────────────────────────┐     │
-│   │     ORM       │  │              Database                  │     │
-│   │  (Prisma/     │──│  ┌─────────┐  ┌─────────┐            │     │
-│   │   Sequelize)  │  │  │ SQLite  │  │PostgreSQL│            │     │
-│   └───────────────┘  │  │  (Dev)  │  │  (Prod)  │            │     │
-│                      │  └─────────┘  └─────────┘            │     │
-│                      └───────────────────────────────────────┘     │
+│                              │                                       │
+│                              ▼                                       │
+│   ┌─────────────────────────────────────────────────────────────┐   │
+│   │                    PostgREST API                             │   │
+│   │  • Auto-generated REST endpoints                            │   │
+│   │  • Query filtering, sorting, pagination                     │   │
+│   │  • Request validation                                       │   │
+│   └─────────────────────────────────────────────────────────────┘   │
+│                              │                                       │
+│                              ▼                                       │
+│   ┌─────────────────────────────────────────────────────────────┐   │
+│   │                    PostgreSQL Database                       │   │
+│   │  • Row Level Security (RLS) policies                        │   │
+│   │  • User data isolation                                      │   │
+│   │  • Automatic timestamps                                     │   │
+│   └─────────────────────────────────────────────────────────────┘   │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -85,14 +71,16 @@ src/
 │   ├── ContactList.tsx
 │   ├── ContactDetail.tsx
 │   └── ContactForm.tsx
-├── services/            # API client functions
-│   ├── api.ts           # Axios instance & interceptors
-│   ├── auth.ts          # Auth API calls
-│   └── contacts.ts      # Contact API calls
+├── services/            # Supabase client functions
+│   ├── supabase.ts      # Supabase client initialization
+│   ├── auth.ts          # Auth service functions
+│   └── contacts.ts      # Contact CRUD functions
 ├── store/               # State management
 │   ├── authSlice.ts
 │   └── contactSlice.ts
 ├── hooks/               # Custom React hooks
+│   ├── useAuth.ts       # Auth state and methods
+│   └── useContacts.ts   # Contact data fetching
 ├── utils/               # Helper functions
 └── types/               # TypeScript type definitions
 ```
@@ -101,46 +89,20 @@ src/
 - React 18+ with TypeScript
 - React Router for navigation
 - Redux Toolkit or Zustand for state management
-- Axios for HTTP requests
+- `@supabase/supabase-js` for backend communication
 - Tailwind CSS for styling
 
-### 3.2 Backend Architecture
+### 3.2 Supabase Client Setup
 
-```
-src/
-├── config/              # Configuration management
-│   ├── database.ts
-│   └── environment.ts
-├── controllers/         # Request handlers
-│   ├── authController.ts
-│   └── contactController.ts
-├── middleware/          # Express middleware
-│   ├── auth.ts          # JWT verification
-│   ├── validation.ts    # Request validation
-│   └── errorHandler.ts  # Global error handling
-├── models/              # Database models
-│   ├── User.ts
-│   ├── Contact.ts
-│   └── Tag.ts
-├── routes/              # Route definitions
-│   ├── auth.ts
-│   └── contacts.ts
-├── services/            # Business logic
-│   ├── authService.ts
-│   └── contactService.ts
-├── utils/               # Helper functions
-│   ├── hash.ts          # Password hashing
-│   └── token.ts         # JWT utilities
-└── app.ts               # Express app setup
-```
+```typescript
+// src/services/supabase.ts
+import { createClient } from '@supabase/supabase-js'
 
-**Technology Stack:**
-- Node.js 18+ with TypeScript
-- Express.js web framework
-- Prisma ORM (or Sequelize)
-- JWT for authentication
-- bcrypt for password hashing
-- Zod for validation
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+```
 
 ---
 
@@ -149,48 +111,61 @@ src/
 ### 4.1 Authentication Flow
 
 ```
-┌────────┐     ┌────────┐     ┌────────┐     ┌────────┐
-│ Client │     │  API   │     │ Auth   │     │   DB   │
-└───┬────┘     └───┬────┘     └───┬────┘     └───┬────┘
-    │              │              │              │
-    │ POST /login  │              │              │
-    │─────────────▶│              │              │
-    │              │ validate     │              │
-    │              │─────────────▶│              │
-    │              │              │ find user    │
-    │              │              │─────────────▶│
-    │              │              │◀─────────────│
-    │              │              │              │
-    │              │ verify password             │
-    │              │◀─────────────│              │
-    │              │              │              │
-    │ JWT token    │ generate JWT │              │
-    │◀─────────────│◀─────────────│              │
-    │              │              │              │
+┌────────┐                    ┌─────────────────────────────────────┐
+│ Client │                    │            Supabase                  │
+└───┬────┘                    │  ┌────────┐         ┌────────────┐  │
+    │                         │  │  Auth  │         │  Database  │  │
+    │                         │  └───┬────┘         └─────┬──────┘  │
+    │                         │      │                    │         │
+    │ signInWithPassword()    │      │                    │         │
+    │────────────────────────▶│      │                    │         │
+    │                         │      │ verify credentials │         │
+    │                         │      │───────────────────▶│         │
+    │                         │      │◀───────────────────│         │
+    │                         │      │                    │         │
+    │                         │      │ generate JWT       │         │
+    │                         │      │──────┐             │         │
+    │                         │      │◀─────┘             │         │
+    │                         │      │                    │         │
+    │ { user, session }       │      │                    │         │
+    │◀────────────────────────│      │                    │         │
+    │                         │      │                    │         │
+    │ Store session in        │      │                    │         │
+    │ localStorage            │      │                    │         │
+    │                         │      │                    │         │
+    └─────────────────────────┴──────┴────────────────────┴─────────┘
 ```
 
 ### 4.2 Contact CRUD Flow
 
 ```
-┌────────┐     ┌────────┐     ┌────────┐     ┌────────┐
-│ Client │     │  API   │     │Service │     │   DB   │
-└───┬────┘     └───┬────┘     └───┬────┘     └───┬────┘
-    │              │              │              │
-    │ GET /contacts│              │              │
-    │ + JWT Header │              │              │
-    │─────────────▶│              │              │
-    │              │ verify JWT   │              │
-    │              │──────┐       │              │
-    │              │◀─────┘       │              │
-    │              │              │              │
-    │              │ getContacts  │              │
-    │              │─────────────▶│              │
-    │              │              │ SELECT *     │
-    │              │              │─────────────▶│
-    │              │              │◀─────────────│
-    │              │◀─────────────│              │
-    │ JSON response│              │              │
-    │◀─────────────│              │              │
+┌────────┐                    ┌─────────────────────────────────────┐
+│ Client │                    │            Supabase                  │
+└───┬────┘                    │  ┌─────────┐        ┌────────────┐  │
+    │                         │  │PostgREST│        │ PostgreSQL │  │
+    │                         │  └────┬────┘        │   + RLS    │  │
+    │                         │       │             └─────┬──────┘  │
+    │                         │       │                   │         │
+    │ supabase.from('contacts')       │                   │         │
+    │   .select('*')          │       │                   │         │
+    │   + JWT in header       │       │                   │         │
+    │────────────────────────▶│       │                   │         │
+    │                         │       │ Extract user_id   │         │
+    │                         │       │ from JWT          │         │
+    │                         │       │                   │         │
+    │                         │       │ SELECT * FROM     │         │
+    │                         │       │ contacts WHERE    │         │
+    │                         │       │ RLS policy passes │         │
+    │                         │       │──────────────────▶│         │
+    │                         │       │                   │         │
+    │                         │       │ Only user's       │         │
+    │                         │       │ contacts returned │         │
+    │                         │       │◀──────────────────│         │
+    │                         │       │                   │         │
+    │ { data: contacts[] }    │       │                   │         │
+    │◀────────────────────────│       │                   │         │
+    │                         │       │                   │         │
+    └─────────────────────────┴───────┴───────────────────┴─────────┘
 ```
 
 ---
@@ -201,12 +176,12 @@ src/
 
 ```
 ┌─────────────────┐       ┌─────────────────┐
-│      users      │       │    contacts     │
-├─────────────────┤       ├─────────────────┤
-│ id (PK)         │       │ id (PK)         │
-│ email           │◀──┐   │ user_id (FK)    │───┐
-│ password_hash   │   └───│ first_name      │   │
-│ name            │       │ last_name       │   │
+│   auth.users    │       │    contacts     │
+│   (Supabase)    │       ├─────────────────┤
+├─────────────────┤       │ id (PK, UUID)   │
+│ id (PK, UUID)   │◀──┐   │ user_id (FK)    │───┐
+│ email           │   └───│ first_name      │   │
+│ encrypted_pass  │       │ last_name       │   │
 │ created_at      │       │ email           │   │
 └─────────────────┘       │ phone           │   │
                           │ company         │   │
@@ -232,27 +207,38 @@ src/
                           ┌─────────────────┐   │
                           │      tags       │   │
                           ├─────────────────┤   │
-                          │ id (PK)         │◀──┘
+                          │ id (PK, UUID)   │◀──┘
                           │ user_id (FK)    │
                           │ name            │
                           └─────────────────┘
 ```
 
-### 5.2 Indexing Strategy
+### 5.2 Row Level Security (RLS)
+
+RLS policies ensure data isolation at the database level. Each user can only access their own data.
+
+| Table | Policy | Rule |
+|-------|--------|------|
+| contacts | SELECT | `auth.uid() = user_id` |
+| contacts | INSERT | `auth.uid() = user_id` |
+| contacts | UPDATE | `auth.uid() = user_id` |
+| contacts | DELETE | `auth.uid() = user_id` |
+| tags | SELECT/INSERT/UPDATE/DELETE | `auth.uid() = user_id` |
+| contact_tags | ALL | Contact must belong to current user |
+
+### 5.3 Indexing Strategy
 
 | Table | Index | Columns | Purpose |
 |-------|-------|---------|---------|
-| users | idx_users_email | email | Fast login lookup |
 | contacts | idx_contacts_user | user_id | Filter by owner |
 | contacts | idx_contacts_email | email | Search by email |
 | contacts | idx_contacts_name | last_name, first_name | Sort by name |
-| tags | idx_tags_user_name | user_id, name | Unique tag per user |
 
 ---
 
 ## 6. Security Architecture
 
-### 6.1 Authentication & Authorization
+### 6.1 Security Layers
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -261,41 +247,44 @@ src/
 │                                                              │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ Layer 1: Transport Security                         │    │
-│  │ • HTTPS/TLS 1.3 encryption                         │    │
-│  │ • HSTS headers                                      │    │
+│  │ • HTTPS/TLS encryption (enforced by Supabase)      │    │
+│  │ • Secure WebSocket connections                      │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                          │                                   │
 │                          ▼                                   │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │ Layer 2: Authentication                             │    │
-│  │ • JWT tokens (access + refresh)                    │    │
-│  │ • Token expiration (15min access, 7d refresh)      │    │
-│  │ • Secure httpOnly cookies                          │    │
+│  │ Layer 2: Authentication (Supabase Auth)             │    │
+│  │ • JWT tokens with automatic refresh                 │    │
+│  │ • Secure password hashing (bcrypt)                  │    │
+│  │ • Session management                                │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                          │                                   │
 │                          ▼                                   │
 │  ┌─────────────────────────────────────────────────────┐    │
-│  │ Layer 3: Authorization                              │    │
-│  │ • User can only access own contacts                │    │
-│  │ • Resource ownership validation                     │    │
+│  │ Layer 3: Authorization (Row Level Security)         │    │
+│  │ • Database-level access control                    │    │
+│  │ • User can only access own data                    │    │
+│  │ • Policies enforced on every query                 │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                          │                                   │
 │                          ▼                                   │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │ Layer 4: Input Validation                           │    │
-│  │ • Schema validation (Zod)                          │    │
-│  │ • SQL injection prevention (parameterized queries) │    │
-│  │ • XSS prevention (output encoding)                 │    │
+│  │ • Frontend validation (Zod/Yup)                    │    │
+│  │ • PostgREST request validation                     │    │
+│  │ • Database constraints                              │    │
 │  └─────────────────────────────────────────────────────┘    │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 Password Storage
+### 6.2 Authentication Flow
 
-```
-User Password → bcrypt(password, salt_rounds=12) → password_hash → Database
-```
+1. User submits credentials to Supabase Auth
+2. Supabase validates and returns JWT + refresh token
+3. Client stores session (managed by Supabase client)
+4. JWT automatically included in subsequent API requests
+5. PostgREST extracts `auth.uid()` from JWT for RLS
 
 ---
 
@@ -304,22 +293,26 @@ User Password → bcrypt(password, salt_rounds=12) → password_hash → Databas
 ### 7.1 Development Environment
 
 ```
-┌─────────────────────────────────────────┐
-│           Local Development             │
-├─────────────────────────────────────────┤
-│                                         │
-│  ┌─────────────┐    ┌─────────────┐    │
-│  │   Vite      │    │   Node.js   │    │
-│  │ Dev Server  │    │   Express   │    │
-│  │  :3000      │───▶│   :8080     │    │
-│  └─────────────┘    └──────┬──────┘    │
-│                            │           │
-│                     ┌──────▼──────┐    │
-│                     │   SQLite    │    │
-│                     │  (file DB)  │    │
-│                     └─────────────┘    │
-│                                         │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                   Local Development                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────────┐                                        │
+│  │   Vite Dev      │                                        │
+│  │   Server        │                                        │
+│  │   :5173         │                                        │
+│  └────────┬────────┘                                        │
+│           │                                                  │
+│           │ HTTPS                                            │
+│           ▼                                                  │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │            Supabase (Cloud or Local)                 │    │
+│  │  • Auth Service                                      │    │
+│  │  • PostgREST API                                    │    │
+│  │  • PostgreSQL Database                               │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ### 7.2 Production Environment
@@ -329,59 +322,93 @@ User Password → bcrypt(password, salt_rounds=12) → password_hash → Databas
 │                     Production Deployment                         │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                   │
-│    ┌─────────┐      ┌─────────────────────────────────────┐     │
-│    │   CDN   │      │         Cloud Platform               │     │
-│    │(Static) │      │     (Railway/Render/Fly.io)         │     │
-│    └────┬────┘      ├─────────────────────────────────────┤     │
-│         │           │                                      │     │
-│         │           │  ┌───────────┐    ┌───────────┐     │     │
-│         │           │  │  Node.js  │    │ PostgreSQL│     │     │
-│         └──────────▶│  │  Server   │───▶│  Database │     │     │
-│                     │  │           │    │           │     │     │
-│                     │  └───────────┘    └───────────┘     │     │
-│                     │                                      │     │
-│                     └─────────────────────────────────────┘     │
+│   ┌─────────────────────────┐                                    │
+│   │   Static Hosting        │                                    │
+│   │   (Vercel/Netlify/      │                                    │
+│   │    Cloudflare Pages)    │                                    │
+│   │                         │                                    │
+│   │  • React SPA bundle     │                                    │
+│   │  • CDN distribution     │                                    │
+│   │  • Automatic SSL        │                                    │
+│   └───────────┬─────────────┘                                    │
+│               │                                                   │
+│               │ HTTPS                                             │
+│               ▼                                                   │
+│   ┌─────────────────────────────────────────────────────────┐    │
+│   │              Supabase Cloud (Fully Managed)              │    │
+│   │                                                          │    │
+│   │  ┌────────────┐  ┌────────────┐  ┌────────────────┐     │    │
+│   │  │   Auth     │  │  PostgREST │  │   PostgreSQL   │     │    │
+│   │  │  Service   │  │    API     │  │   Database     │     │    │
+│   │  │            │  │            │  │                │     │    │
+│   │  │ • Sign up  │  │ • REST API │  │ • Managed DB   │     │    │
+│   │  │ • Sign in  │  │ • Realtime │  │ • Backups      │     │    │
+│   │  │ • Sessions │  │ • Storage  │  │ • RLS Policies │     │    │
+│   │  └────────────┘  └────────────┘  └────────────────┘     │    │
+│   │                                                          │    │
+│   └─────────────────────────────────────────────────────────┘    │
 │                                                                   │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+**Deployment is simplified:**
+- Frontend: Deploy static React build to any CDN/static host
+- Backend: Supabase is fully managed (no servers to deploy)
 
 ---
 
 ## 8. API Design
 
-### 8.1 RESTful Conventions
+### 8.1 Supabase Client Operations
 
-| Operation | HTTP Method | Endpoint | Response |
-|-----------|-------------|----------|----------|
-| List | GET | /api/contacts | 200 + array |
-| Read | GET | /api/contacts/:id | 200 + object |
-| Create | POST | /api/contacts | 201 + object |
-| Update | PUT | /api/contacts/:id | 200 + object |
-| Delete | DELETE | /api/contacts/:id | 204 |
+| Operation | Supabase Client Method |
+|-----------|------------------------|
+| List | `supabase.from('contacts').select('*')` |
+| Read | `supabase.from('contacts').select('*').eq('id', id).single()` |
+| Create | `supabase.from('contacts').insert(data).select().single()` |
+| Update | `supabase.from('contacts').update(data).eq('id', id).select().single()` |
+| Delete | `supabase.from('contacts').delete().eq('id', id)` |
 
-### 8.2 Response Format
+### 8.2 Query Features
+
+```typescript
+// Pagination
+.range(0, 19)  // Items 0-19 (first 20)
+
+// Sorting
+.order('last_name', { ascending: true })
+
+// Filtering
+.eq('company', 'Acme Inc')
+.ilike('email', '%@gmail.com')
+
+// Search (multiple fields)
+.or('first_name.ilike.%john%,last_name.ilike.%john%,email.ilike.%john%')
+
+// Select specific columns
+.select('id, first_name, last_name, email')
+```
+
+### 8.3 Response Format
 
 **Success Response:**
-```json
+```typescript
 {
-  "data": { ... },
-  "meta": {
-    "page": 1,
-    "limit": 20,
-    "total": 150
-  }
+  data: Contact[] | Contact | null,
+  error: null,
+  count: number | null  // When using .select('*', { count: 'exact' })
 }
 ```
 
 **Error Response:**
-```json
+```typescript
 {
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid email format",
-    "details": [
-      { "field": "email", "message": "Must be a valid email" }
-    ]
+  data: null,
+  error: {
+    message: "Row not found",
+    details: null,
+    hint: null,
+    code: "PGRST116"
   }
 }
 ```
@@ -393,23 +420,26 @@ User Password → bcrypt(password, salt_rounds=12) → password_hash → Databas
 | Component | Choice | Rationale |
 |-----------|--------|-----------|
 | Frontend | React + TypeScript | Component reusability, type safety |
-| Backend | Node.js + Express | JavaScript ecosystem, fast development |
-| Database | PostgreSQL | Reliability, JSON support, scalability |
-| ORM | Prisma | Type safety, migrations, good DX |
-| Auth | JWT | Stateless, scalable |
-| Validation | Zod | TypeScript integration, runtime safety |
+| Backend | Supabase | Managed PostgreSQL, auth, instant APIs, RLS |
+| Database | PostgreSQL (Supabase) | Reliability, JSON support, RLS capabilities |
+| Auth | Supabase Auth | Built-in, secure, handles JWT/sessions |
+| API | PostgREST (via Supabase) | Auto-generated from schema, no code needed |
+| Authorization | Row Level Security | Database-level, cannot be bypassed |
+| Client SDK | @supabase/supabase-js | Type-safe, handles auth state |
 | Styling | Tailwind CSS | Rapid UI development, consistency |
 
 ---
 
 ## 10. Scalability Considerations
 
-### Current Design (Single Instance)
+### Current Design
 - Handles up to 10,000 contacts per user
 - Supports ~100 concurrent users
+- Supabase free tier: 500MB database, 50,000 monthly active users
 
-### Future Scaling Path
-1. **Horizontal Scaling**: Add load balancer + multiple API instances
-2. **Database**: Read replicas for search-heavy workloads
-3. **Caching**: Redis for session storage and frequent queries
-4. **Search**: Elasticsearch for advanced contact search
+### Scaling with Supabase
+1. **Database**: Upgrade Supabase plan for more storage and connections
+2. **Performance**: Add database indexes, optimize queries
+3. **Realtime**: Enable Supabase Realtime for live updates (optional)
+4. **Edge Functions**: Add Supabase Edge Functions for complex logic if needed
+5. **Search**: Use PostgreSQL full-text search or integrate external search service
